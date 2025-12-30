@@ -1,97 +1,75 @@
+import gradio as gr
 import os
-from typing import List, Dict, Callable
+import statics
+from openai import OpenAI
 
+def chat_with_llm(message, history, provider, model, temperature):
+    if not message or not message.strip():
+        yield "", history
+        return
 
-# Function 1: Call any popular LLM
-def call_llm(provider: str, model: str, prompt: str, api_key: str, **kwargs) -> str:
-    """
-    Calls a popular LLM based on the provider.
+    # 1. 这里的 history 现在是一个 list of dicts: [{'role': 'user', 'content': '...'}, ...]
+    provider = provider.lower()
+    api_key_env = statics.API_KEY_ENV.get(provider)
 
-    Supported providers: 'openai', 'anthropic', 'google' (for Gemini), 'groq' (for various models).
+    api_key = os.getenv(api_key_env)
 
-    Args:
-        provider (str): The LLM provider (e.g., 'openai', 'anthropic').
-        model (str): The model name (e.g., 'gpt-4o', 'claude-3-sonnet-20240229').
-        prompt (str): The input prompt.
-        api_key (str): API key for the provider.
-        **kwargs: Additional parameters like temperature, max_tokens, etc.
+    if not api_key:
+        error_msg = f"⚠️ 未检测到 {provider.upper()} 的 API Key！"
+        # 兼容新格式：添加用户消息和错误提示
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": error_msg})
+        yield "", history
+        return
 
-    Returns:
-        str: The generated response.
-
-    Example:
-        response = call_llm('openai', 'gpt-4o', 'Hello!', 'your_openai_key', temperature=0.7)
-    """
-    if provider.lower() == 'openai':
-        try:
-            from openai import OpenAI
-        except ImportError:
-            raise ImportError("Install openai: pip install openai")
-
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            **kwargs
-        )
-        return response.choices[0].message.content
-
-    elif provider.lower() == 'anthropic':
-        try:
-            from anthropic import Anthropic
-        except ImportError:
-            raise ImportError("Install anthropic: pip install anthropic")
-
-        client = Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=model,
-            max_tokens=kwargs.get('max_tokens', 1024),
-            messages=[{"role": "user", "content": prompt}],
-            **{k: v for k, v in kwargs.items() if k != 'max_tokens'}
-        )
-        return response.content[0].text
-
-    elif provider.lower() == 'google':
-        try:
-            import google.generativeai as genai
-        except ImportError:
-            raise ImportError("Install google-generative-ai: pip install google-generative-ai")
-
-        genai.configure(api_key=api_key)
-        model_instance = genai.GenerativeModel(model)
-        response = model_instance.generate_content(prompt, generation_config=kwargs)
-        return response.text
-
-    elif provider.lower() == 'groq':
-        try:
-            from groq import Groq
-        except ImportError:
-            raise ImportError("Install groq: pip install groq")
-
-        client = Groq(api_key=api_key)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            **kwargs
-        )
-        return response.choices[0].message.content
-    elif provider.lower() == 'dashscope-sdk':
-        try:
-            import dashscope
-            from dashscope import Generation
-        except ImportError:
-            raise ImportError("请安装: pip install dashscope")
-
-        dashscope.api_key = api_key
-        response = Generation.call(
-            model=model,  # 如 "qwen-max"
-            messages=[{'role': 'user', 'content': prompt}],
-            result_format='message',
-            **kwargs  # temperature 等参数也支持
-        )
-        if response.status_code == 200:
-            return response.output.choices[0].message.content
+    try:
+        # 客户端初始化保持不变
+        if provider == "dashscope":
+            client = OpenAI(api_key=api_key, base_url = statics.BASE_URL_MAP["dashscope"])
+            extra_body = {"enable_search": True}
+        elif provider == "groq":
+            client = OpenAI(api_key=api_key, base_url=statics.BASE_URL_MAP["groq"])
+            extra_body = {}
+        elif provider == "gemini":
+            client = OpenAI(api_key=api_key, base_url = statics.BASE_URL_MAP["gemini"])
+            extra_body = {}
+        elif provider == "grok":
+            client = OpenAI(api_key=api_key, base_url= statics.BASE_URL_MAP["grok"])
+            extra_body = {}
         else:
-            raise Exception(f"通义千问调用失败: {response.message}")
-    else:
-        raise ValueError(f"Unsupported provider: {provider}. Supported: openai, anthropic, google, groq.")
+            client = OpenAI(api_key=api_key)
+            extra_body = {}
+
+        # 2. 构造发送给 API 的 messages（现在 history 已经是这个格式了，可以直接追加）
+        messages = history + [{"role": "user", "content": message}]
+
+        # 3. 更新 UI：先显示用户消息，并预留一个空的助手回复位
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": ""})
+        yield "", history
+
+        full_response = ""
+        stream = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            stream=True,
+            extra_body=extra_body
+        )
+
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                content = chunk.choices[0].delta.content
+                full_response += content
+                # 更新最后一条助手消息的内容
+                history[-1]["content"] = full_response
+                yield "", history
+
+        if not full_response.strip():
+            history[-1]["content"] = "（模型未返回有效内容）"
+            yield "", history
+
+    except Exception as e:
+        error_msg = f"❌ 请求失败：{str(e)}"
+        history[-1]["content"] = error_msg
+        yield "", history
