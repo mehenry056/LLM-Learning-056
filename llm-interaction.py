@@ -77,7 +77,7 @@ with gr.Blocks() as demo:  # 移除了 theme 和 title 参数
 
     msg.submit(
         fn=llm_call.chat_with_llm,
-        inputs=[msg, chatbot, provider, model, temperature],
+        inputs=[msg, chatbot, provider, model,  ],
         outputs=[msg, chatbot]
     )
     submit_btn.click(

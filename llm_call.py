@@ -24,21 +24,21 @@ def chat_with_llm(message, history, provider, model, temperature):
 
     try:
         # 客户端初始化保持不变
-        if provider == "dashscope":
-            client = OpenAI(api_key=api_key, base_url = statics.BASE_URL_MAP["dashscope"])
-            extra_body = {"enable_search": True}
-        elif provider == "groq":
-            client = OpenAI(api_key=api_key, base_url=statics.BASE_URL_MAP["groq"])
-            extra_body = {}
-        elif provider == "gemini":
-            client = OpenAI(api_key=api_key, base_url = statics.BASE_URL_MAP["gemini"])
-            extra_body = {}
-        elif provider == "grok":
-            client = OpenAI(api_key=api_key, base_url= statics.BASE_URL_MAP["grok"])
-            extra_body = {}
-        else:
-            client = OpenAI(api_key=api_key)
-            extra_body = {}
+        # if provider == "dashscope":
+        client = OpenAI(api_key=api_key, base_url = statics.BASE_URL_MAP[provider])
+        extra_body = {"enable_search": True}
+        # elif provider == "groq":
+        #     client = OpenAI(api_key=api_key, base_url=statics.BASE_URL_MAP["groq"])
+        #     extra_body = {}
+        # elif provider == "gemini":
+        #     client = OpenAI(api_key=api_key, base_url = statics.BASE_URL_MAP["gemini"])
+        #     extra_body = {}
+        # elif provider == "grok":
+        #     client = OpenAI(api_key=api_key, base_url= statics.BASE_URL_MAP["grok"])
+        #     extra_body = {}
+        # else:
+        #     client = OpenAI(api_key=api_key)
+        #     extra_body = {}
 
         # 2. 构造发送给 API 的 messages（现在 history 已经是这个格式了，可以直接追加）
         messages = history + [{"role": "user", "content": message}]
